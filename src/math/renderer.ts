@@ -56,11 +56,17 @@ export interface MathRenderRequest {
   readonly maxColumns: number
   readonly maxRows: number
   /**
-   * Pixels per ex as a fraction of the cell height. Display formulas pass
-   * {@link DISPLAY_EX_TO_CELL_HEIGHT} so they are set larger than the body
+   * Multiplier on the text-size base scale. Display formulas pass the
+   * `mathImageScale` step (1.44 or 1.8) so they are set larger than the body
    * text; inline formulas keep the base scale.
    */
-  readonly baseExToCellHeight?: number
+  readonly scale?: number
+  /**
+   * Baseline distance from the top of the cell, in device-independent pixels.
+   * Inline formulas pass the body text's baseline so the image stands on the
+   * prose's line; display blocks leave it out and center the ink.
+   */
+  readonly baseline?: number
 }
 
 export interface MathRaster {
@@ -174,7 +180,8 @@ async function rasterize(vector: Vector, request: MathRenderRequest, color: stri
       cellSize: request.cellSize,
       maxColumns: request.maxColumns,
       maxRows: request.maxRows,
-      ...(request.baseExToCellHeight === undefined ? {} : { baseExToCellHeight: request.baseExToCellHeight }),
+      ...(request.scale === undefined ? {} : { scale: request.scale }),
+      ...(request.baseline === undefined ? {} : { baseline: request.baseline }),
       bleed,
       maxEdge: TERMINAL_IMAGE_MAX_EDGE,
       maxBytes: TERMINAL_IMAGE_MAX_BYTES,
@@ -191,10 +198,11 @@ async function rasterize(vector: Vector, request: MathRenderRequest, color: stri
     }
     const { width, height } = ink.info
     if (width > plan.canvasWidth || height > plan.canvasHeight) continue
-    // Center the ink box in the whole-cell canvas; the rest stays transparent.
+    // Place the ink at the plan's corner (centered, or on the prose baseline
+    // for inline formulas); clamp so a rounding-sized raster stays inside.
     const canvas = new Uint8Array(plan.canvasWidth * plan.canvasHeight * 4)
-    const offsetX = Math.floor((plan.canvasWidth - width) / 2)
-    const offsetY = Math.floor((plan.canvasHeight - height) / 2)
+    const offsetX = Math.max(0, Math.min(plan.canvasWidth - width, Math.floor(plan.contentLeft)))
+    const offsetY = Math.max(0, Math.min(plan.canvasHeight - height, Math.floor(plan.contentTop)))
     for (let y = 0; y < height; y++) {
       canvas.set(
         ink.data.subarray(y * width * 4, (y + 1) * width * 4),
@@ -237,7 +245,8 @@ function prepare(request: MathRenderRequest): PreparedRequest {
     request.cellSize.height,
     request.maxColumns,
     request.maxRows,
-    request.baseExToCellHeight ?? '',
+    request.scale ?? '',
+    request.baseline ?? '',
     tex,
   ].join('\u0000')
   return { key, tex, color }

@@ -5,6 +5,7 @@ import type { DOMElement } from '../ink/dom.js'
 import measureElement from '../ink/measure-element.js'
 import { useTerminalSize } from '../ink/hooks/use-terminal-size.js'
 import { INLINE_MEDIA_MAX, inlineMediaPlaceholder, layoutInlineMedia, type InlineRow } from '../math/inline-layout.js'
+import { textBaselineY } from '../math/layout.js'
 import { peekMathRaster, renderMathRaster, type MathRaster, type MathRenderRequest, type MathRenderResult } from '../math/renderer.js'
 import { getTheme } from '../theme.js'
 import type { CliHighlight } from '../terminal-utils/cliHighlight.js'
@@ -57,6 +58,7 @@ export function InlineMathParagraph({ token, highlight }: Props): React.ReactNod
     if (width.value === undefined || formulas.length === 0) return undefined
     return formulas.map(formula => ({
       tex: formula.text, display: false, color, cellSize, maxColumns: width.value!, maxRows: 1,
+      baseline: textBaselineY(cellSize),
     }))
   }, [graphics, protocol, cellSize, color, width.value, formulas])
   const results = useSettledRasters(requests)
@@ -195,7 +197,7 @@ function useSettledRasters(requests: readonly MathRenderRequest[] | undefined): 
 }
 
 function requestKey(request: MathRenderRequest): string {
-  return [request.tex, request.color, request.cellSize.width, request.cellSize.height, request.maxColumns, request.maxRows].join('\u0000')
+  return [request.tex, request.color, request.cellSize.width, request.cellSize.height, request.maxColumns, request.maxRows, request.scale ?? '', request.baseline ?? ''].join('\u0000')
 }
 
 /**

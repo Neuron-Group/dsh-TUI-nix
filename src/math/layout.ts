@@ -2,44 +2,78 @@
  * Terminal-cell geometry for a typeset formula. Pure: no rasterization.
  *
  * MathJax reports a formula's size in ex. A formula starts at one base scale
- * tied to the terminal's physical cell height (so every formula reads at the
- * same size, like text), shrinks uniformly only when it would exceed the
- * width or height it may occupy, and is never enlarged. The canvas is padded,
- * never stretched, to a whole number of cells.
+ * tied to the terminal's text size (so every formula reads at the same size,
+ * like text), shrinks uniformly only when it would exceed the width or height
+ * it may occupy, and is never enlarged. The canvas is padded, never stretched,
+ * to a whole number of cells.
  */
 import type { TerminalCellSize } from '../ink/terminal-image.js'
 
-/** Pixels per ex at the base scale, as a fraction of the cell height. */
-export const BASE_EX_TO_CELL_HEIGHT = 0.5
 /**
- * Display formulas set larger than the body text, like LaTeX (settings
- * `mathImageScale`): at one ex per 0.72 cell heights the glyph strokes get
- * roughly 45% more device pixels, which is what a terminal-drawn ink mask
- * needs to read as clean rather than thin. Inline formulas keep the base
+ * A terminal cell reports the font's advance width, not just the line box:
+ * it is the one metric that follows the text size when a user changes the
+ * terminal's line spacing. Programming fonts advance by about 0.6em.
+ */
+export const MONOSPACE_ADVANCE_EM = 0.6
+/** TeX math fonts' x-height — the unit MathJax measures ex in — is ~0.43em. */
+export const TEX_X_HEIGHT_EM = 0.43
+/**
+ * Pixels per ex at the base scale. Cell height would include the terminal's
+ * configurable leading, which is why sizing from it made formulas read larger
+ * than the body text.
+ */
+export const BASE_EX_TO_CELL_WIDTH = TEX_X_HEIGHT_EM / MONOSPACE_ADVANCE_EM
+/**
+ * The display-size steps (settings `mathImageScale`) multiply the base scale:
+ * Large and Extra large set display math bigger than the body text, which
+ * hands the terminal more device pixels per stroke — the only sharpness lever
+ * a terminal image has. They keep the ratios the old cell-height-based
+ * constants had (1.44x and 1.8x the text size). Inline formulas keep the base
  * scale — their single row of cells clamps the resolution anyway.
  */
-export const LARGE_DISPLAY_EX_TO_CELL_HEIGHT = 0.72
+export const LARGE_DISPLAY_SCALE = 1.44
 /** The next step up: about 80% more pixels than the base scale. */
-export const XLARGE_DISPLAY_EX_TO_CELL_HEIGHT = 0.9
+export const XLARGE_DISPLAY_SCALE = 1.8
 /**
  * Below this fraction of the base scale the formula is unreadable as an
  * image; the caller keeps the Unicode rendering instead of shrinking further.
  */
 export const MIN_SCALE_FRACTION = 0.5
+/** Terminal-font descent, in em; the visual baseline sits above it. */
+const MONOSPACE_DESCENT_EM = 0.25
+
+/**
+ * The body text's baseline inside one cell, in device-independent pixels.
+ * Inline formula images pass this so they stand on the prose's line instead
+ * of floating at the cell's vertical centre. The estimate follows the same
+ * font metrics as the base scale: an ~0.25em descent under a ~0.6em advance.
+ */
+export function textBaselineY(cellSize: TerminalCellSize): number {
+  const descent = cellSize.width * (MONOSPACE_DESCENT_EM / MONOSPACE_ADVANCE_EM)
+  return Math.max(1, Math.min(cellSize.height - 1, cellSize.height - descent))
+}
 
 export interface FormulaSize {
   readonly widthEx: number
   readonly heightEx: number
+  /** MathJax's baseline offset from the box bottom, in ex (negative). */
+  readonly verticalAlignEx?: number
 }
 
 export interface FormulaConstraints {
   readonly cellSize: TerminalCellSize
-  /** Pixels per ex as a fraction of the cell height; defaults to the base scale. */
-  readonly baseExToCellHeight?: number
+  /** Multiplier on the text-size base scale; display settings pass 1.44/1.8. */
+  readonly scale?: number
   readonly maxColumns: number
   readonly maxRows: number
   /** Transparent margin around the ink, in device-independent pixels. */
   readonly bleed: number
+  /**
+   * Formula baseline distance from the canvas top, in device-independent
+   * pixels. Inline formulas pass the body text's baseline so the image sits on
+   * the same line as the prose; when absent the ink is centered.
+   */
+  readonly baseline?: number
   /** Largest canvas edge and RGBA byte size the raster may use. */
   readonly maxEdge: number
   readonly maxBytes: number
@@ -51,9 +85,12 @@ export interface FormulaLayoutPlan {
   /** Canvas size in device pixels (cells × cell size × deviceScale). */
   readonly canvasWidth: number
   readonly canvasHeight: number
-  /** Ink box size in device pixels, centered in the canvas. */
+  /** Ink box size in device pixels. */
   readonly contentWidth: number
   readonly contentHeight: number
+  /** Top-left corner of the ink box in the device-pixel canvas. */
+  readonly contentLeft: number
+  readonly contentTop: number
   readonly pixelsPerEx: number
   readonly deviceScale: 1 | 2
 }
@@ -65,14 +102,18 @@ export function planFormulaLayout(
   constraints: FormulaConstraints,
 ): FormulaLayoutPlan | FormulaLayoutFailure {
   const { cellSize, maxColumns, maxRows, bleed } = constraints
+  const scale = constraints.scale ?? 1
   if (
     !(size.widthEx > 0) || !(size.heightEx > 0) ||
     !Number.isFinite(size.widthEx) || !Number.isFinite(size.heightEx) ||
+    !Number.isFinite(scale) || scale <= 0 ||
+    (constraints.baseline !== undefined && (!Number.isFinite(constraints.baseline) || constraints.baseline < 0)) ||
     maxColumns < 1 || maxRows < 1
   ) {
     return 'invalid-dimensions'
   }
-  const basePixelsPerEx = cellSize.height * (constraints.baseExToCellHeight ?? BASE_EX_TO_CELL_HEIGHT)
+  const textPixelsPerEx = cellSize.width * BASE_EX_TO_CELL_WIDTH
+  const basePixelsPerEx = textPixelsPerEx * scale
   const availableWidth = maxColumns * cellSize.width - bleed * 2
   const availableHeight = maxRows * cellSize.height - bleed * 2
   if (availableWidth <= 0 || availableHeight <= 0) return 'too-small'
@@ -82,29 +123,46 @@ export function planFormulaLayout(
     availableHeight / size.heightEx,
   )
   // Legibility is absolute, not relative to what the caller asked for: the
-  // floor stays on the base scale so a larger display request shrinks back to
-  // a readable size instead of flipping formulas to the Unicode fallback.
-  if (pixelsPerEx < cellSize.height * BASE_EX_TO_CELL_HEIGHT * MIN_SCALE_FRACTION) return 'too-small'
+  // floor stays on the text-size scale so a larger display request shrinks
+  // back to a readable size instead of flipping formulas to the Unicode
+  // fallback.
+  if (pixelsPerEx < textPixelsPerEx * MIN_SCALE_FRACTION) return 'too-small'
 
   const contentWidth = size.widthEx * pixelsPerEx
   const contentHeight = size.heightEx * pixelsPerEx
   const columns = Math.min(maxColumns, Math.ceil((contentWidth + bleed * 2) / cellSize.width))
   const rows = Math.min(maxRows, Math.ceil((contentHeight + bleed * 2) / cellSize.height))
-  const fits = (scale: number): boolean => {
-    const width = columns * cellSize.width * scale
-    const height = rows * cellSize.height * scale
+  const fits = (deviceScale: number): boolean => {
+    const width = columns * cellSize.width * deviceScale
+    const height = rows * cellSize.height * deviceScale
     return width <= constraints.maxEdge && height <= constraints.maxEdge &&
       width * height * 4 <= constraints.maxBytes
   }
   const deviceScale = fits(2) ? 2 : fits(1) ? 1 : undefined
   if (deviceScale === undefined) return 'raster-limit'
+  const canvasWidth = columns * cellSize.width * deviceScale
+  const canvasHeight = rows * cellSize.height * deviceScale
+  const scaledWidth = contentWidth * deviceScale
+  const scaledHeight = contentHeight * deviceScale
+  const contentLeft = (canvasWidth - scaledWidth) / 2
+  // A baseline-anchored image (inline math) sits on the prose's line; the
+  // remaining space goes above it. Clamp so the ink stays inside the canvas.
+  const contentTop = constraints.baseline === undefined
+    ? (canvasHeight - scaledHeight) / 2
+    : Math.max(0, Math.min(
+        canvasHeight - scaledHeight,
+        constraints.baseline * deviceScale -
+          (size.heightEx + (size.verticalAlignEx ?? 0)) * pixelsPerEx * deviceScale,
+      ))
   return {
     columns,
     rows,
-    canvasWidth: columns * cellSize.width * deviceScale,
-    canvasHeight: rows * cellSize.height * deviceScale,
-    contentWidth: contentWidth * deviceScale,
-    contentHeight: contentHeight * deviceScale,
+    canvasWidth,
+    canvasHeight,
+    contentWidth: scaledWidth,
+    contentHeight: scaledHeight,
+    contentLeft,
+    contentTop,
     pixelsPerEx: pixelsPerEx * deviceScale,
     deviceScale,
   }

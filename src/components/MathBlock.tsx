@@ -4,7 +4,7 @@ import { useTerminalSize } from '../ink/hooks/use-terminal-size.js'
 import { stringWidth } from '../ink/stringWidth.js'
 import { peekMathRaster, renderMathRaster, type MathRaster, type MathRenderRequest } from '../math/renderer.js'
 import { getTheme } from '../theme.js'
-import { LARGE_DISPLAY_EX_TO_CELL_HEIGHT, XLARGE_DISPLAY_EX_TO_CELL_HEIGHT } from '../math/layout.js'
+import { LARGE_DISPLAY_SCALE, XLARGE_DISPLAY_SCALE } from '../math/layout.js'
 import { renderDisplayMath, renderInlineMath, type MathToken } from '../terminal-utils/math.js'
 import { getMathImageBacking, getMathImageScale, getMathRendering, subscribeMathImageBacking, subscribeMathImageScale, subscribeMathRendering } from '../tuiDisplayPrefs.js'
 import { useTerminalBackground, useTheme } from './design-system/ThemeProvider.js'
@@ -48,9 +48,9 @@ export function MathBlock({ token, dimColor, forceWidth }: Props): React.ReactNo
   // Display size is a user choice now (settings `mathImageScale`): bigger
   // images are also the only way a terminal gets more pixels per stroke.
   const imageScale = React.useSyncExternalStore(subscribeMathImageScale, getMathImageScale)
-  const exToCellHeight = imageScale === 'xlarge'
-    ? XLARGE_DISPLAY_EX_TO_CELL_HEIGHT
-    : imageScale === 'large' ? LARGE_DISPLAY_EX_TO_CELL_HEIGHT : undefined
+  const scale = imageScale === 'xlarge'
+    ? XLARGE_DISPLAY_SCALE
+    : imageScale === 'large' ? LARGE_DISPLAY_SCALE : undefined
   // What sits behind the formula: transparent (only its own pixels) or the
   // terminal's own background colour, composited first.
   const backdrop = React.useSyncExternalStore(subscribeMathImageBacking, getMathImageBacking)
@@ -71,7 +71,7 @@ export function MathBlock({ token, dimColor, forceWidth }: Props): React.ReactNo
   const request: MathRenderRequest | undefined = wantImage && graphics && cellSize !== undefined && color !== undefined
     ? {
         tex: token.text, display: true, color, cellSize, maxColumns: budget, maxRows: IMAGE_MAX_ROWS,
-        ...(exToCellHeight === undefined ? {} : { baseExToCellHeight: exToCellHeight }),
+        ...(scale === undefined ? {} : { scale }),
       }
     : undefined
   const raster = useMathRaster(request)
@@ -169,7 +169,7 @@ function useMathRaster(request: MathRenderRequest | undefined): MathRaster | und
 }
 
 function requestKey(request: MathRenderRequest): string {
-  return [request.tex, request.color, request.cellSize.width, request.cellSize.height, request.maxColumns, request.maxRows, request.baseExToCellHeight ?? ''].join('\u0000')
+  return [request.tex, request.color, request.cellSize.width, request.cellSize.height, request.maxColumns, request.maxRows, request.scale ?? '', request.baseline ?? ''].join('\u0000')
 }
 
 /** A theme color as `#rrggbb`, or undefined for ANSI names the image cannot match. */

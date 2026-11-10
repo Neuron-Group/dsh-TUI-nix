@@ -2145,6 +2145,8 @@ export function Chat({
   const openMathPreview = React.useCallback((preview: MathPreviewRequest): void => {
     const scaled: MathRenderRequest = {
       ...preview.request,
+      // The preview card centers the formula, not the transcript's text line.
+      baseline: undefined,
       cellSize: {
         width: preview.request.cellSize.width * MATH_PREVIEW_SCALE,
         height: preview.request.cellSize.height * MATH_PREVIEW_SCALE,

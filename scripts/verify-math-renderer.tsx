@@ -1,16 +1,18 @@
 /** Math image renderer regression (MathJax → SVG → sharp → RGBA): the pure
- * cell layout (base scale, shrink-only, whole-cell canvas, limits), real
- * rasters (transparent canvas, ink clear of every edge, ink color, cell box),
- * typed failures (bad TeX, excluded `html` commands, empty, too long, too
- * narrow), per-formula TeX isolation (macros, labels), the vector/raster caches, and the lazy-load contract: MathJax is
- * reachable only through a dynamic import inside src/math. Run with:
+ * cell layout (base scale from cell width, shrink-only, whole-cell canvas,
+ * baseline placement, limits), real rasters (transparent canvas, ink clear of
+ * every edge, ink color, cell box, baseline), typed failures (bad TeX,
+ * excluded `html` commands, empty, too long, too narrow), per-formula TeX
+ * isolation (macros, labels), the vector/raster caches, and the lazy-load
+ * contract: MathJax is reachable only through a dynamic import inside
+ * src/math. Run with:
  * node --import tsx/esm scripts/verify-math-renderer.tsx
  */
 import assert from 'node:assert/strict'
 import { readdirSync, readFileSync } from 'node:fs'
 import { join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { planFormulaLayout } from '../src/math/layout.js'
+import { BASE_EX_TO_CELL_WIDTH, planFormulaLayout, textBaselineY } from '../src/math/layout.js'
 import { clearMathRenderCaches, mathRenderStats, renderMathRaster } from '../src/math/renderer.js'
 
 const cell = { width: 10, height: 20 }
@@ -20,10 +22,10 @@ const limits = { cellSize: cell, bleed: 2, maxEdge: 1024, maxBytes: 4 * 1024 * 1
 
 const base = planFormulaLayout({ widthEx: 10, heightEx: 2 }, { ...limits, maxColumns: 80, maxRows: 10 })
 assert.ok(typeof base !== 'string')
-assert.equal(base.pixelsPerEx, 10 * base.deviceScale, 'a formula that fits uses the base scale (half a cell height per ex)')
+assert.equal(base.pixelsPerEx, 10 * BASE_EX_TO_CELL_WIDTH * base.deviceScale, 'a formula that fits uses the base scale (derived from the cell width, not its line height)')
 assert.equal(base.canvasWidth, base.columns * cell.width * base.deviceScale, 'the canvas is a whole number of cells')
 assert.equal(base.canvasHeight, base.rows * cell.height * base.deviceScale)
-assert.deepEqual([base.columns, base.rows], [11, 2])
+assert.deepEqual([base.columns, base.rows], [8, 1])
 
 const shrunk = planFormulaLayout({ widthEx: 40, heightEx: 2 }, { ...limits, maxColumns: 30, maxRows: 10 })
 assert.ok(typeof shrunk !== 'string')
@@ -33,7 +35,7 @@ const aspect = (plan: typeof shrunk) => plan.contentWidth / plan.contentHeight
 assert.ok(Math.abs(aspect(shrunk) - 20) < 1e-9, 'uniformly — the aspect ratio is kept')
 
 const tiny = planFormulaLayout({ widthEx: 1, heightEx: 1 }, { ...limits, maxColumns: 80, maxRows: 10 })
-assert.ok(typeof tiny !== 'string' && tiny.pixelsPerEx / tiny.deviceScale === 10, 'a short formula is never enlarged')
+assert.ok(typeof tiny !== 'string' && tiny.pixelsPerEx / tiny.deviceScale === 10 * BASE_EX_TO_CELL_WIDTH, 'a short formula is never enlarged')
 assert.equal(planFormulaLayout({ widthEx: 200, heightEx: 2 }, { ...limits, maxColumns: 20, maxRows: 10 }), 'too-small')
 assert.equal(planFormulaLayout({ widthEx: 0, heightEx: 2 }, { ...limits, maxColumns: 20, maxRows: 10 }), 'invalid-dimensions')
 assert.equal(
@@ -41,7 +43,13 @@ assert.equal(
   'raster-limit',
   'a canvas past the edge budget even at 1x is rejected',
 )
-const oneX = planFormulaLayout({ widthEx: 40, heightEx: 2 }, { ...limits, maxColumns: 80, maxRows: 10, maxEdge: 600 })
+const tallCell = planFormulaLayout({ widthEx: 10, heightEx: 2 }, { ...limits, cellSize: { width: 10, height: 40 }, maxColumns: 80, maxRows: 10 })
+assert.ok(typeof tallCell !== 'string' && tallCell.pixelsPerEx === base.pixelsPerEx, 'a taller line box does not enlarge the formula')
+const baseline = planFormulaLayout({ widthEx: 8, heightEx: 2, verticalAlignEx: -0.25 }, { ...limits, maxColumns: 80, maxRows: 1, baseline: 16 })
+const centered = planFormulaLayout({ widthEx: 8, heightEx: 2, verticalAlignEx: -0.25 }, { ...limits, maxColumns: 80, maxRows: 1 })
+assert.ok(typeof baseline !== 'string' && typeof centered !== 'string' && baseline.contentTop > centered.contentTop, 'an inline baseline places the ink lower than centering it')
+assert.equal(textBaselineY(cell), 20 - 10 * (0.25 / 0.6), 'the text baseline sits above the cell bottom by the font descent')
+const oneX = planFormulaLayout({ widthEx: 60, heightEx: 2 }, { ...limits, maxColumns: 80, maxRows: 10, maxEdge: 600 })
 assert.ok(typeof oneX !== 'string' && oneX.deviceScale === 1, 'a canvas that only fits at 1x drops the 2x density')
 
 // ── Real rasters ───────────────────────────────────────────────────────
@@ -73,6 +81,22 @@ for (const tex of FORMULAS) {
     inkBounds.left > 0 && inkBounds.top > 0 && inkBounds.right < source.width && inkBounds.bottom < source.height,
     `${tex}: ink clear of every canvas edge`,
   )
+}
+
+// Baseline-anchored inline rasters: the request's baseline reaches the
+// canvas placement, so an inline image can stand on the prose's line instead
+// of floating at the cell centre.
+{
+  const tex = String.raw`\mathbf d\cdot\mathbf n=0`
+  const centered = await request(tex, false, { maxRows: 1 })
+  const aligned = await request(tex, false, { maxRows: 1, baseline: 18 })
+  assert.ok(centered.ok && aligned.ok, 'inline rasters render with and without a baseline')
+  assert.ok(
+    aligned.raster.inkBounds.top > centered.raster.inkBounds.top,
+    'a baseline moves the ink down in the cell canvas',
+  )
+  const fraction = await request(String.raw`\frac{1}{2}`, false, { maxRows: 1, baseline: textBaselineY(cell) })
+  assert.ok(fraction.ok, 'a tall inline formula still fits a baseline-anchored one-row canvas')
 }
 
 // Ink color: the most opaque pixel carries the requested color.

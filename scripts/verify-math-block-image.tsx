@@ -19,7 +19,7 @@ import type { TerminalCellSize } from '../src/ink/terminal-image.js'
 import { MathBlock } from '../src/components/MathBlock.js'
 import { renderMathRaster, type MathRenderRequest } from '../src/math/renderer.js'
 import { getTheme } from '../src/theme.js'
-import { LARGE_DISPLAY_EX_TO_CELL_HEIGHT } from '../src/math/layout.js'
+import { LARGE_DISPLAY_SCALE, XLARGE_DISPLAY_SCALE } from '../src/math/layout.js'
 import { stringWidth } from '../src/ink/stringWidth.js'
 import { renderDisplayMath, renderInlineMath } from '../src/terminal-utils/math.js'
 import { applyMathImageScale, applyMathRendering, normalizeMathImageScale, type MathImageScale } from '../src/tuiDisplayPrefs.js'
@@ -65,13 +65,13 @@ const block = (text: string, dimColor = false, pending = false) =>
 const rgb = /^rgb\((\d+),(\d+),(\d+)\)$/.exec(getTheme('dark').text)
 assert.ok(rgb !== null, 'the dark theme text color is rgb()')
 const color = `#${rgb.slice(1, 4).map(channel => Number(channel).toString(16).padStart(2, '0')).join('')}`
-const baseFor = (scale: MathImageScale): number | undefined =>
-  scale === 'xlarge' ? 0.9 : scale === 'large' ? LARGE_DISPLAY_EX_TO_CELL_HEIGHT : undefined
+const scaleFor = (scale: MathImageScale): number | undefined =>
+  scale === 'xlarge' ? XLARGE_DISPLAY_SCALE : scale === 'large' ? LARGE_DISPLAY_SCALE : undefined
 const request = (tex: string, scale: MathImageScale = 'auto'): MathRenderRequest => {
-  const base = baseFor(scale)
+  const mathScale = scaleFor(scale)
   return {
     tex, display: true, color, cellSize: CELL, maxColumns: WIDTH - 2 - 4, maxRows: 16,
-    ...(base === undefined ? {} : { baseExToCellHeight: base }),
+    ...(mathScale === undefined ? {} : { scale: mathScale }),
   }
 }
 

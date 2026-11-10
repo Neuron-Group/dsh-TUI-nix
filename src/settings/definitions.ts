@@ -176,8 +176,8 @@ export const SETTING_DEFINITIONS = {
     label: 'Formula image size',
     descriptions: { zh: '公式图片大小' },
     group: 'math',
-    hint: 'How large a display formula is set when it renders as an image (LaTeX math → Image, both on this page). Text size matches the body text; Large and Extra large set display math bigger, which also hands the terminal more device pixels for its strokes — the only sharpness lever a terminal image has. Inline formulas are unaffected: their single row of cells caps the resolution. Applies immediately.',
-    hintDescriptions: { zh: '块级公式渲染成图片时的大小（配合 LaTeX 公式的「图片」）。与正文同尺寸：和正文一样大；放大 / 更大：显示公式排得更大，终端也因此有更多像素画笔画，观感更锐利——这是终端图片唯一的清晰度杠杆。行内公式不受影响（只能占一行，像素上限被卡死）。立即生效。' },
+    hint: 'How large a display formula is set when it renders as an image (LaTeX math → Image, both on this page). Text size matches the body text; Large and Extra large set display math bigger, which also hands the terminal more device pixels for its strokes — the only sharpness lever a terminal image has. Inline formulas always match the body text: their single row of cells caps the resolution. Applies immediately.',
+    hintDescriptions: { zh: '块级公式渲染成图片时的大小（配合 LaTeX 公式的「图片」）。与正文同尺寸：和正文一样大；放大 / 更大：显示公式排得更大，终端也因此有更多像素画笔画，观感更锐利——这是终端图片唯一的清晰度杠杆。行内公式始终与正文同尺寸（只能占一行，像素上限被卡死），不受此设置影响。立即生效。' },
     kind: 'select',
     options: [
       { value: 'auto', label: 'Text size', descriptions: { zh: '与正文同尺寸' } },
