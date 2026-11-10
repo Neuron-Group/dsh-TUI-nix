@@ -25,8 +25,10 @@ import { useMathPreviewOpener } from './mathPreview.js'
  * (typeset into a one-row image, or failed). The switch then happens once,
  * so formulas arriving one by one never shift the wrap points. Formulas that
  * failed or would shrink below legibility on one row keep their Unicode
- * form. Each row is laid out by `layoutInlineMedia` and drawn as text
- * pieces with one-row <Image> slots between them.
+ * form. A fraction-bearing formula is lifted a little inside its one row, so
+ * its script-sized numerator and denominator read closer to the prose. Each
+ * row is laid out by `layoutInlineMedia` and drawn as text pieces with
+ * one-row <Image> slots between them.
  */
 
 type Props = {

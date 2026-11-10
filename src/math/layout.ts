@@ -35,12 +35,29 @@ export const LARGE_DISPLAY_SCALE = 1.44
 /** The next step up: about 80% more pixels than the base scale. */
 export const XLARGE_DISPLAY_SCALE = 1.8
 /**
+ * Inline formulas share the fixed text row. MathJax sets a stacked fraction's
+ * numerator and denominator at script size there, so a fraction-bearing
+ * inline image gets this modest fixed lift; the one-row height cap scales
+ * deeper nesting back down instead of spending a second row.
+ */
+export const INLINE_FRACTION_SCALE = 1.25
+/**
  * Below this fraction of the base scale the formula is unreadable as an
  * image; the caller keeps the Unicode rendering instead of shrinking further.
  */
 export const MIN_SCALE_FRACTION = 0.5
 /** Terminal-font descent, in em; the visual baseline sits above it. */
 const MONOSPACE_DESCENT_EM = 0.25
+
+/**
+ * Whether TeX contains a fraction-like construct. Inline fraction images get
+ * a small one-row lift; matrices, sums and other tall formulas do not.
+ */
+const FRACTION_COMMAND = /\\(?:[dtc]?frac|binom|dbinom|tbinom|genfrac|over|atop|above|choose)(?![A-Za-z])/
+
+export function hasFraction(tex: string): boolean {
+  return FRACTION_COMMAND.test(tex)
+}
 
 /**
  * The body text's baseline inside one cell, in device-independent pixels.
@@ -74,6 +91,12 @@ export interface FormulaConstraints {
    * the same line as the prose; when absent the ink is centered.
    */
   readonly baseline?: number
+  /**
+   * Smallest fraction of the text scale that still renders; defaults to
+   * {@link MIN_SCALE_FRACTION}. Inline formulas pass 0 so a deeply nested
+   * fraction stays an image and is scaled down inside its one row.
+   */
+  readonly minScaleFraction?: number
   /** Largest canvas edge and RGBA byte size the raster may use. */
   readonly maxEdge: number
   readonly maxBytes: number
@@ -103,10 +126,12 @@ export function planFormulaLayout(
 ): FormulaLayoutPlan | FormulaLayoutFailure {
   const { cellSize, maxColumns, maxRows, bleed } = constraints
   const scale = constraints.scale ?? 1
+  const minScaleFraction = constraints.minScaleFraction ?? MIN_SCALE_FRACTION
   if (
     !(size.widthEx > 0) || !(size.heightEx > 0) ||
     !Number.isFinite(size.widthEx) || !Number.isFinite(size.heightEx) ||
     !Number.isFinite(scale) || scale <= 0 ||
+    !Number.isFinite(minScaleFraction) || minScaleFraction < 0 ||
     (constraints.baseline !== undefined && (!Number.isFinite(constraints.baseline) || constraints.baseline < 0)) ||
     maxColumns < 1 || maxRows < 1
   ) {
@@ -126,7 +151,7 @@ export function planFormulaLayout(
   // floor stays on the text-size scale so a larger display request shrinks
   // back to a readable size instead of flipping formulas to the Unicode
   // fallback.
-  if (pixelsPerEx < textPixelsPerEx * MIN_SCALE_FRACTION) return 'too-small'
+  if (pixelsPerEx < textPixelsPerEx * minScaleFraction) return 'too-small'
 
   const contentWidth = size.widthEx * pixelsPerEx
   const contentHeight = size.heightEx * pixelsPerEx
@@ -146,11 +171,14 @@ export function planFormulaLayout(
   const scaledHeight = contentHeight * deviceScale
   const contentLeft = (canvasWidth - scaledWidth) / 2
   // A baseline-anchored image (inline math) sits on the prose's line; the
-  // remaining space goes above it. Clamp so the ink stays inside the canvas.
+  // remaining space goes above it. Keep a transparent margin at the bottom:
+  // an image clamped flush to the edge would be rejected by the rasterizer's
+  // edge check and then retried at a larger bleed, which shrinks it instead.
+  const margin = bleed * deviceScale
   const contentTop = constraints.baseline === undefined
     ? (canvasHeight - scaledHeight) / 2
     : Math.max(0, Math.min(
-        canvasHeight - scaledHeight,
+        Math.max(0, canvasHeight - scaledHeight - margin),
         constraints.baseline * deviceScale -
           (size.heightEx + (size.verticalAlignEx ?? 0)) * pixelsPerEx * deviceScale,
       ))

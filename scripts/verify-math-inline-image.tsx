@@ -167,6 +167,15 @@ applyMathRendering('image')
     'the image path does not swallow paragraph spacing')
 }
 {
+  // Inline fractions stay images under Image mode. Their one-row slot is
+  // wider than the Unicode fallback text, so the graphics path must differ.
+  applyMathRendering('image')
+  const fractions = 'Substitute $L_1: \\frac{x}{a}=u+t$ and $\\frac{y}{b}=u-t$.'
+  const withGraphics = await screenOf(<Markdown>{fractions}</Markdown>, 60, images(true))
+  const withoutGraphics = await screenOf(<Markdown>{fractions}</Markdown>, 60, images(false))
+  assert.notDeepEqual(withGraphics, withoutGraphics, 'inline fractions take image slots')
+}
+{
   // While streaming, paragraphs stay on the Unicode path.
   applyMathRendering('auto')
   const unicode = await screenOf(<Markdown>{DOCUMENT}</Markdown>, 60)
