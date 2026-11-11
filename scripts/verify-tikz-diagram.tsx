@@ -248,6 +248,7 @@ assert.equal(compilerCalls, 1, 'a cache hit does not recompile')
   const rendered = lines(markdown(fence))
   assert.equal(rendered.length, expected.rows, 'a settled fence takes the raster rows')
   assert.ok(!rendered.some(line => line.includes('```tikz')), 'the fence line is gone')
+  assert.equal(rendered[0]!.search(/\S/u), Math.ceil((WIDTH - expected.columns) / 2), 'the figure image is centered')
 }
 {
   const rendered = lines(markdown('```tikz\n' + FIGURE + '\n```'), images(false, CELL))

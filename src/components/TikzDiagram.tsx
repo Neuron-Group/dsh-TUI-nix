@@ -33,15 +33,14 @@ import {
  * source version compiles. The image never blocks the render thread: TeX is a
  * child process and sharp runs off the React commit.
  *
- * Layout follows MathBlock: an image box of exactly the raster's cells, with
- * the source text under it so a partially visible box (before the protocol
- * paint or while scrolled) still carries the figure's content.
+ * Layout follows MathBlock: an image box of exactly the raster's cells,
+ * centered in the message column, with the source text under it so a
+ * partially visible box (before the protocol paint or while scrolled) still
+ * carries the figure's content.
  */
 
-/** Same viewport slack MarkdownTable, MermaidDiagram and MathBlock keep. */
-const SAFETY_MARGIN = 4
-/** Left padding in columns, matching the code-block body indent. */
-const INDENT_WIDTH = 2
+/** Slack kept around a centered figure. */
+const CENTER_SLACK = 6
 /** Tallest image a figure may take; taller figures shrink, then keep source. */
 const IMAGE_MAX_ROWS = 24
 
@@ -68,7 +67,7 @@ export function TikzDiagram({ source: rawSource, raw, lang, dimColor, closed, hi
   const enabled = mode !== 'source'
   const { columns } = useTerminalSize()
   const width = Math.max(0, forceWidth ?? columns)
-  const budget = width - INDENT_WIDTH - SAFETY_MARGIN
+  const budget = width - CENTER_SLACK
   // Start compiling as soon as the figure is balanced, even if the closing
   // fence is still a few tokens away. Dimmed thinking blocks never become
   // images (an image cannot dim), and an unclosed, unbalanced fence keeps its
@@ -119,7 +118,7 @@ export function TikzDiagram({ source: rawSource, raw, lang, dimColor, closed, hi
   }
 
   return (
-    <Box paddingLeft={INDENT_WIDTH}>
+    <Box alignSelf="center" maxWidth={width}>
       <Image
         transparent
         lineArt
