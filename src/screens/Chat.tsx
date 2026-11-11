@@ -2147,6 +2147,8 @@ export function Chat({
       ...preview.request,
       // The preview card centers the formula, not the transcript's text line.
       baseline: undefined,
+      baselineFromBottom: undefined,
+      minRows: undefined,
       cellSize: {
         width: preview.request.cellSize.width * MATH_PREVIEW_SCALE,
         height: preview.request.cellSize.height * MATH_PREVIEW_SCALE,

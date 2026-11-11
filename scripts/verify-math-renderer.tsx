@@ -48,13 +48,21 @@ assert.equal(hasFraction(String.raw`\overline{x}`), false, 'an overline is not a
 assert.equal(hasFraction(String.raw`\frac{a}{b}`), true, 'frac is a fraction')
 assert.equal(hasFraction(String.raw`a \over b`), true, 'plain TeX over is a fraction')
 assert.equal(hasFraction(String.raw`\binom{n}{k}`), true, 'a binomial is fraction-like')
-assert.equal(INLINE_FRACTION_SCALE, 1.25, 'inline fractions use a small bounded lift')
+assert.equal(INLINE_FRACTION_SCALE, 1.5, 'inline fractions use the bounded two-row lift')
 const tallCell = planFormulaLayout({ widthEx: 10, heightEx: 2 }, { ...limits, cellSize: { width: 10, height: 40 }, maxColumns: 80, maxRows: 10 })
 assert.ok(typeof tallCell !== 'string' && tallCell.pixelsPerEx === base.pixelsPerEx, 'a taller line box does not enlarge the formula')
 const baseline = planFormulaLayout({ widthEx: 8, heightEx: 2, verticalAlignEx: -0.25 }, { ...limits, maxColumns: 80, maxRows: 1, baseline: 16 })
 const centered = planFormulaLayout({ widthEx: 8, heightEx: 2, verticalAlignEx: -0.25 }, { ...limits, maxColumns: 80, maxRows: 1 })
 assert.ok(typeof baseline !== 'string' && typeof centered !== 'string' && baseline.contentTop > centered.contentTop, 'an inline baseline places the ink lower than centering it')
 assert.equal(textBaselineY(cell), 20 - 10 * (0.25 / 0.6), 'the text baseline sits above the cell bottom by the font descent')
+const liftedRow = planFormulaLayout({ widthEx: 10, heightEx: 2 }, { ...limits, maxColumns: 80, maxRows: 2, minRows: 2 })
+assert.ok(typeof liftedRow !== 'string' && liftedRow.rows === 2, 'an inline fraction reserves its second row')
+const bottomAnchored = planFormulaLayout(
+  { widthEx: 8, heightEx: 2, verticalAlignEx: -0.25 },
+  { ...limits, maxColumns: 80, maxRows: 2, minRows: 2, baselineFromBottom: 4 },
+)
+assert.ok(typeof bottomAnchored !== 'string' && bottomAnchored.rows === 2 && bottomAnchored.contentTop > 0,
+  'a bottom-anchored two-row formula places its ink below the top row')
 const oneX = planFormulaLayout({ widthEx: 60, heightEx: 2 }, { ...limits, maxColumns: 80, maxRows: 10, maxEdge: 600 })
 assert.ok(typeof oneX !== 'string' && oneX.deviceScale === 1, 'a canvas that only fits at 1x drops the 2x density')
 
@@ -101,17 +109,22 @@ for (const tex of FORMULAS) {
     aligned.raster.inkBounds.top > centered.raster.inkBounds.top,
     'a baseline moves the ink down in the cell canvas',
   )
-  const fraction = await request(String.raw`\frac{1}{2}`, false, { maxRows: 1, baseline: textBaselineY(cell) })
-  assert.ok(fraction.ok, 'a tall inline formula still fits a baseline-anchored one-row canvas')
-  const lifted = await request(String.raw`\frac{x}{a}=u+t`, false, { maxRows: 1, baseline: textBaselineY(cell) })
-  const pinned = await request(String.raw`\frac{x}{a}=u+t`, false, { maxRows: 1, baseline: textBaselineY(cell), scale: 1 })
+  const inlineTwoRow = {
+    maxRows: 2,
+    minRows: 2,
+    baselineFromBottom: cell.height - textBaselineY(cell),
+  }
+  const fraction = await request(String.raw`\frac{1}{2}`, false, inlineTwoRow)
+  assert.ok(fraction.ok && fraction.raster.rows === 2, 'an inline fraction reserves its second row')
+  const lifted = await request(String.raw`\frac{x}{a}=u+t`, false, inlineTwoRow)
+  const pinned = await request(String.raw`\frac{x}{a}=u+t`, false, { ...inlineTwoRow, scale: 1 })
   assert.ok(lifted.ok && pinned.ok, 'both inline fraction rasters render')
   const inkWidth = (result: typeof lifted) => result.ok ? result.raster.inkBounds.right - result.raster.inkBounds.left : 0
   assert.ok(inkWidth(lifted) > inkWidth(pinned), 'inline fractions get their bounded lift')
   let deep = String.raw`\frac{a}{b}`
   for (let level = 0; level < 5; level++) deep = String.raw`\frac{` + deep + String.raw`}{x}`
-  const deepRaster = await request(deep, false, { maxRows: 1, baseline: textBaselineY(cell) })
-  assert.ok(deepRaster.ok && deepRaster.raster.rows === 1, 'a deeply nested inline fraction still renders inside its one row')
+  const deepRaster = await request(deep, false, inlineTwoRow)
+  assert.ok(deepRaster.ok && deepRaster.raster.rows === 2, 'a deeply nested inline fraction still fits its two rows')
 }
 
 // Ink color: the most opaque pixel carries the requested color.

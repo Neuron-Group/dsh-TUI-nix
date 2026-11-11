@@ -176,6 +176,16 @@ applyMathRendering('image')
   assert.notDeepEqual(withGraphics, withoutGraphics, 'inline fractions take image slots')
 }
 {
+  // A tall inline fraction reserves a second row for the whole line, so the
+  // text still fits beside the larger image.
+  applyMathRendering('image')
+  const tall = 'Before $\\frac{x^2}{a^2}+\\frac{y^2}{b^2}-\\frac{z^2}{c^2}=1$ after.'
+  const unicode = await screenOf(<Markdown>{tall}</Markdown>, 60, images(false), 40)
+  const imaged = await screenOf(<Markdown>{tall}</Markdown>, 60, images(true), 40)
+  assert.ok(imaged.length > unicode.length, 'a fraction line takes a second row')
+  assert.ok(imaged.some(line => line.includes('Before')), 'and keeps the surrounding text')
+}
+{
   // While streaming, paragraphs stay on the Unicode path.
   applyMathRendering('auto')
   const unicode = await screenOf(<Markdown>{DOCUMENT}</Markdown>, 60)

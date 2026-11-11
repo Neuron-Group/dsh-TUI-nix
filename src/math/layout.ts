@@ -35,12 +35,12 @@ export const LARGE_DISPLAY_SCALE = 1.44
 /** The next step up: about 80% more pixels than the base scale. */
 export const XLARGE_DISPLAY_SCALE = 1.8
 /**
- * Inline formulas share the fixed text row. MathJax sets a stacked fraction's
- * numerator and denominator at script size there, so a fraction-bearing
- * inline image gets this modest fixed lift; the one-row height cap scales
- * deeper nesting back down instead of spending a second row.
+ * A fraction-bearing inline formula lifts its whole text line to two rows.
+ * MathJax sets a stacked fraction's numerator and denominator at script size,
+ * so the image gets this lift across those two rows; deeper nesting is
+ * still scaled back so it does not take a third row.
  */
-export const INLINE_FRACTION_SCALE = 1.25
+export const INLINE_FRACTION_SCALE = 1.5
 /**
  * Below this fraction of the base scale the formula is unreadable as an
  * image; the caller keeps the Unicode rendering instead of shrinking further.
@@ -83,6 +83,11 @@ export interface FormulaConstraints {
   readonly scale?: number
   readonly maxColumns: number
   readonly maxRows: number
+  /**
+   * Smallest cell box the formula takes even when its ink would fit fewer
+   * rows (an inline fraction lifts its whole text line to two rows).
+   */
+  readonly minRows?: number
   /** Transparent margin around the ink, in device-independent pixels. */
   readonly bleed: number
   /**
@@ -92,9 +97,15 @@ export interface FormulaConstraints {
    */
   readonly baseline?: number
   /**
+   * Baseline distance from the canvas bottom, in device-independent pixels.
+   * Inline formulas anchor to the bottom row's text baseline so a lifted
+   * two-row line still shares one baseline.
+   */
+  readonly baselineFromBottom?: number
+  /**
    * Smallest fraction of the text scale that still renders; defaults to
    * {@link MIN_SCALE_FRACTION}. Inline formulas pass 0 so a deeply nested
-   * fraction stays an image and is scaled down inside its one row.
+   * fraction stays an image and is scaled down inside its reserved rows.
    */
   readonly minScaleFraction?: number
   /** Largest canvas edge and RGBA byte size the raster may use. */
@@ -133,6 +144,9 @@ export function planFormulaLayout(
     !Number.isFinite(scale) || scale <= 0 ||
     !Number.isFinite(minScaleFraction) || minScaleFraction < 0 ||
     (constraints.baseline !== undefined && (!Number.isFinite(constraints.baseline) || constraints.baseline < 0)) ||
+    (constraints.baselineFromBottom !== undefined &&
+      (!Number.isFinite(constraints.baselineFromBottom) || constraints.baselineFromBottom < 0)) ||
+    (constraints.minRows !== undefined && (!Number.isInteger(constraints.minRows) || constraints.minRows < 1)) ||
     maxColumns < 1 || maxRows < 1
   ) {
     return 'invalid-dimensions'
@@ -156,7 +170,10 @@ export function planFormulaLayout(
   const contentWidth = size.widthEx * pixelsPerEx
   const contentHeight = size.heightEx * pixelsPerEx
   const columns = Math.min(maxColumns, Math.ceil((contentWidth + bleed * 2) / cellSize.width))
-  const rows = Math.min(maxRows, Math.ceil((contentHeight + bleed * 2) / cellSize.height))
+  const rows = Math.min(maxRows, Math.max(
+    constraints.minRows ?? 1,
+    Math.ceil((contentHeight + bleed * 2) / cellSize.height),
+  ))
   const fits = (deviceScale: number): boolean => {
     const width = columns * cellSize.width * deviceScale
     const height = rows * cellSize.height * deviceScale
@@ -175,13 +192,13 @@ export function planFormulaLayout(
   // an image clamped flush to the edge would be rejected by the rasterizer's
   // edge check and then retried at a larger bleed, which shrinks it instead.
   const margin = bleed * deviceScale
-  const contentTop = constraints.baseline === undefined
-    ? (canvasHeight - scaledHeight) / 2
-    : Math.max(0, Math.min(
-        Math.max(0, canvasHeight - scaledHeight - margin),
-        constraints.baseline * deviceScale -
-          (size.heightEx + (size.verticalAlignEx ?? 0)) * pixelsPerEx * deviceScale,
-      ))
+  const maxTop = Math.max(0, canvasHeight - scaledHeight - margin)
+  const ascent = (size.heightEx + (size.verticalAlignEx ?? 0)) * pixelsPerEx * deviceScale
+  const contentTop = constraints.baselineFromBottom !== undefined
+    ? Math.max(0, Math.min(maxTop, canvasHeight - constraints.baselineFromBottom * deviceScale - ascent))
+    : constraints.baseline === undefined
+      ? (canvasHeight - scaledHeight) / 2
+      : Math.max(0, Math.min(maxTop, constraints.baseline * deviceScale - ascent))
   return {
     columns,
     rows,

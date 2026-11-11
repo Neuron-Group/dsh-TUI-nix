@@ -5,7 +5,7 @@ import type { DOMElement } from '../ink/dom.js'
 import measureElement from '../ink/measure-element.js'
 import { useTerminalSize } from '../ink/hooks/use-terminal-size.js'
 import { INLINE_MEDIA_MAX, inlineMediaPlaceholder, layoutInlineMedia, type InlineRow } from '../math/inline-layout.js'
-import { textBaselineY } from '../math/layout.js'
+import { hasFraction, textBaselineY } from '../math/layout.js'
 import { peekMathRaster, renderMathRaster, type MathRaster, type MathRenderRequest, type MathRenderResult } from '../math/renderer.js'
 import { getTheme } from '../theme.js'
 import type { CliHighlight } from '../terminal-utils/cliHighlight.js'
@@ -25,10 +25,10 @@ import { useMathPreviewOpener } from './mathPreview.js'
  * (typeset into a one-row image, or failed). The switch then happens once,
  * so formulas arriving one by one never shift the wrap points. Formulas that
  * failed or would shrink below legibility on one row keep their Unicode
- * form. A fraction-bearing formula is lifted a little inside its one row, so
- * its script-sized numerator and denominator read closer to the prose. Each
- * row is laid out by `layoutInlineMedia` and drawn as text pieces with
- * one-row <Image> slots between them.
+ * form. A fraction-bearing formula gets a second row and lifts the whole text
+ * line with it, so its script-sized numerator and denominator read closer to
+ * the prose. Each row is laid out by `layoutInlineMedia` and drawn as text
+ * pieces with <Image> slots between them.
  */
 
 type Props = {
@@ -58,28 +58,41 @@ export function InlineMathParagraph({ token, highlight }: Props): React.ReactNod
   const requests = React.useMemo((): MathRenderRequest[] | undefined => {
     if (!graphics || (protocol !== 'kitty' && protocol !== 'sixel') || cellSize === undefined || color === undefined) return undefined
     if (width.value === undefined || formulas.length === 0) return undefined
-    return formulas.map(formula => ({
-      tex: formula.text, display: false, color, cellSize, maxColumns: width.value!, maxRows: 1,
-      baseline: textBaselineY(cellSize),
-    }))
+    return formulas.map(formula => {
+      const fraction = hasFraction(formula.text)
+      return {
+        tex: formula.text, display: false, color, cellSize, maxColumns: width.value!,
+        // A fraction takes a second row and lifts the whole text line with it.
+        maxRows: fraction ? 2 : 1,
+        ...(fraction
+          ? { minRows: 2, baselineFromBottom: cellSize.height - textBaselineY(cellSize) }
+          : { baseline: textBaselineY(cellSize) }),
+      }
+    })
   }, [graphics, protocol, cellSize, color, width.value, formulas])
   const results = useSettledRasters(requests)
 
-  const layout = React.useMemo((): { rows: InlineRow[]; media: MediaSlot[] } | undefined => {
+  const layout = React.useMemo((): { rows: InlineRow[]; media: MediaSlot[]; heights: number[] } | undefined => {
     if (results === undefined || width.value === undefined) return undefined
     const media: MediaSlot[] = []
     const slot = new Map<MathToken, string>()
     formulas.forEach((formula, index) => {
       const result = results[index]!
-      // Failures and formulas that did not fit one row keep their Unicode.
-      if (!result.ok || result.raster.rows !== 1) return
+      // Failures keep their Unicode rendering.
+      if (!result.ok) return
       slot.set(formula, inlineMediaPlaceholder(media.length, result.raster.columns))
       media.push({ formula, raster: result.raster })
     })
     if (media.length === 0) return undefined
     const formatted = formatToken(withPlaceholders(token, slot), 0, null, null, highlight).trim()
     const rows = layoutInlineMedia(formatted, width.value, media.map(entry => entry.raster.columns))
-    return rows === undefined ? undefined : { rows, media }
+    if (rows === undefined) return undefined
+    // A row is as tall as its tallest image; text pieces center in it.
+    const heights = rows.map(row => row.pieces.reduce(
+      (height, piece) => piece.kind === 'media' ? Math.max(height, media[piece.index]!.raster.rows) : height,
+      1,
+    ))
+    return { rows, media, heights }
   }, [results, width.value, formulas, token, highlight])
 
   return (
@@ -97,7 +110,8 @@ export function InlineMathParagraph({ token, highlight }: Props): React.ReactNod
           <Box
             key={rowIndex}
             flexDirection="row"
-            height={1}
+            height={layout.heights[rowIndex]}
+            alignItems={layout.heights[rowIndex]! > 1 ? 'flex-end' : undefined}
             softWrapContinuation={row.continuation ? (row.gap ? -1 : 1) * layout.rows[rowIndex - 1]!.width : undefined}
           >
             {row.pieces.map((piece, pieceIndex) => {
@@ -116,13 +130,13 @@ export function InlineMathParagraph({ token, highlight }: Props): React.ReactNod
               // edge — the same contract block formulas use.
               const formulaRequest = requests?.[piece.index]
               const painted = (
-                <Image {...(composited ? {} : { transparent: true })} lineArt presentation="transcript" source={raster.source} width={piece.columns} height={1} alt={formula.text} copyText={formula.raw}>
+                <Image {...(composited ? {} : { transparent: true })} lineArt presentation="transcript" source={raster.source} width={piece.columns} height={raster.rows} alt={formula.text} copyText={formula.raw}>
                   <Text dimColor wrap="truncate">{renderInlineMath(formula.text) ?? formula.raw}</Text>
                 </Image>
               )
               const image = composited
                 ? (
-                  <Box width={piece.columns} height={1} flexShrink={0} backgroundColor={terminalBackground}>
+                  <Box width={piece.columns} height={raster.rows} flexShrink={0} backgroundColor={terminalBackground}>
                     {painted}
                   </Box>
                 )
@@ -199,7 +213,7 @@ function useSettledRasters(requests: readonly MathRenderRequest[] | undefined): 
 }
 
 function requestKey(request: MathRenderRequest): string {
-  return [request.tex, request.color, request.cellSize.width, request.cellSize.height, request.maxColumns, request.maxRows, request.scale ?? '', request.baseline ?? ''].join('\u0000')
+  return [request.tex, request.color, request.cellSize.width, request.cellSize.height, request.maxColumns, request.maxRows, request.minRows ?? '', request.scale ?? '', request.baseline ?? '', request.baselineFromBottom ?? ''].join('\u0000')
 }
 
 /**

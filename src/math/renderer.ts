@@ -57,12 +57,14 @@ export interface MathRenderRequest {
   /** Largest cell box the formula may occupy; it shrinks to fit, never grows. */
   readonly maxColumns: number
   readonly maxRows: number
+  /** Smallest cell box; inline fraction images reserve their second text row. */
+  readonly minRows?: number
   /**
    * Explicit multiplier on the text-size base scale. Display formulas pass
    * the `mathImageScale` step (1.44 or 1.8) so they are set larger than the
    * body text. When omitted, a fraction-bearing inline formula gets
-   * {@link INLINE_FRACTION_SCALE} inside its one row; display formulas keep
-   * the text size.
+   * {@link INLINE_FRACTION_SCALE} across the two rows it reserves; display
+   * formulas keep the text size.
    */
   readonly scale?: number
   /**
@@ -71,6 +73,8 @@ export interface MathRenderRequest {
    * prose's line; display blocks leave it out and center the ink.
    */
   readonly baseline?: number
+  /** Baseline distance from the canvas bottom; anchors a lifted two-row inline line. */
+  readonly baselineFromBottom?: number
 }
 
 export interface MathRaster {
@@ -180,8 +184,8 @@ async function rasterize(vector: Vector, request: MathRenderRequest, color: stri
   const sharp = await loadSharp()
   if (sharp === undefined) return { ok: false, failure: 'backend-unavailable' }
   // An explicit display-size choice wins. A fraction-bearing inline image
-  // gets a small fixed lift; the one-row height cap scales deeper nesting
-  // back down instead of spending a second row.
+  // gets a small fixed lift across its reserved two rows; deeper nesting is
+  // still scaled back so the image does not take a third row.
   const inlineLift = !request.display && hasFraction(request.tex)
   const scale = request.scale ?? (inlineLift ? INLINE_FRACTION_SCALE : 1)
   for (const bleed of inlineLift ? INLINE_BLEED_STEPS : BLEED_STEPS) {
@@ -189,8 +193,10 @@ async function rasterize(vector: Vector, request: MathRenderRequest, color: stri
       cellSize: request.cellSize,
       maxColumns: request.maxColumns,
       maxRows: request.maxRows,
+      ...(request.minRows === undefined ? {} : { minRows: request.minRows }),
       scale,
       ...(request.baseline === undefined ? {} : { baseline: request.baseline }),
+      ...(request.baselineFromBottom === undefined ? {} : { baselineFromBottom: request.baselineFromBottom }),
       ...(inlineLift ? { minScaleFraction: 0 } : {}),
       bleed,
       maxEdge: TERMINAL_IMAGE_MAX_EDGE,
@@ -255,8 +261,10 @@ function prepare(request: MathRenderRequest): PreparedRequest {
     request.cellSize.height,
     request.maxColumns,
     request.maxRows,
+    request.minRows ?? '',
     request.scale ?? '',
     request.baseline ?? '',
+    request.baselineFromBottom ?? '',
     tex,
   ].join('\u0000')
   return { key, tex, color }

@@ -169,7 +169,7 @@ function useMathRaster(request: MathRenderRequest | undefined): MathRaster | und
 }
 
 function requestKey(request: MathRenderRequest): string {
-  return [request.tex, request.color, request.cellSize.width, request.cellSize.height, request.maxColumns, request.maxRows, request.scale ?? '', request.baseline ?? ''].join('\u0000')
+  return [request.tex, request.color, request.cellSize.width, request.cellSize.height, request.maxColumns, request.maxRows, request.minRows ?? '', request.scale ?? '', request.baseline ?? '', request.baselineFromBottom ?? ''].join('\u0000')
 }
 
 /** A theme color as `#rrggbb`, or undefined for ANSI names the image cannot match. */
