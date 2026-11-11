@@ -437,7 +437,7 @@ export const applyMathRendering = mathRenderingStore.apply
 
 /**
  * How large a display formula is set when it renders as an image (settings
- * `dsh-tui.mathImageScale`): `auto` matches the body text, `large` and
+ * `dsh-tui.mathImageScale`): `auto` is a little larger than the body text, `large` and
  * `xlarge` set display math bigger. Size is the only sharpness lever a
  * terminal image has — the raster is drawn one device pixel per pixel, so a
  * larger formula is literally more pixels per stroke. Inline formulas keep the

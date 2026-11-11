@@ -4,7 +4,7 @@ import { useTerminalSize } from '../ink/hooks/use-terminal-size.js'
 import { stringWidth } from '../ink/stringWidth.js'
 import { peekMathRaster, renderMathRaster, type MathRaster, type MathRenderRequest } from '../math/renderer.js'
 import { getTheme } from '../theme.js'
-import { LARGE_DISPLAY_SCALE, XLARGE_DISPLAY_SCALE } from '../math/layout.js'
+import { DISPLAY_TEXT_SCALE, LARGE_DISPLAY_SCALE, XLARGE_DISPLAY_SCALE } from '../math/layout.js'
 import { renderDisplayMath, renderInlineMath, type MathToken } from '../terminal-utils/math.js'
 import { getMathImageBacking, getMathImageScale, getMathRendering, subscribeMathImageBacking, subscribeMathImageScale, subscribeMathRendering } from '../tuiDisplayPrefs.js'
 import { useTerminalBackground, useTheme } from './design-system/ThemeProvider.js'
@@ -12,9 +12,9 @@ import { useMathPreviewOpener } from './mathPreview.js'
 
 /**
  * A `$$…$$` / `\[…\]` block rendered as display-mode Unicode: fractions and
- * operator limits stacked over several rows, indented like a code-block body.
- * The indent is layout padding rather than leading spaces, so a wrapped
- * single-line fallback keeps it on every row.
+ * operator limits stacked over several rows, centered in the message column.
+ * Centering is layout alignment rather than leading spaces, so every row of
+ * the block stays together.
  *
  * A stacked layout cannot wrap, so when it is wider than the viewport the
  * block falls back to the single-line form (which wraps like prose), and
@@ -29,10 +29,8 @@ import { useMathPreviewOpener } from './mathPreview.js'
  * path can only upgrade a block, never lose it.
  */
 
-/** Same viewport slack MarkdownTable and MermaidDiagram keep. */
-const SAFETY_MARGIN = 4
-/** Left padding in columns, matching the code-block body indent. */
-const INDENT_WIDTH = 2
+/** Slack kept around a centered block. */
+const CENTER_SLACK = 6
 /** Tallest image a block may take; taller formulas shrink to fit. */
 const IMAGE_MAX_ROWS = 16
 
@@ -46,11 +44,12 @@ type Props = {
 export function MathBlock({ token, dimColor, forceWidth }: Props): React.ReactNode {
   const mode = React.useSyncExternalStore(subscribeMathRendering, getMathRendering)
   // Display size is a user choice now (settings `mathImageScale`): bigger
-  // images are also the only way a terminal gets more pixels per stroke.
+  // images are also the only way a terminal gets more pixels per stroke. The
+  // text-size step is a touch above body text so display math stands out.
   const imageScale = React.useSyncExternalStore(subscribeMathImageScale, getMathImageScale)
   const scale = imageScale === 'xlarge'
     ? XLARGE_DISPLAY_SCALE
-    : imageScale === 'large' ? LARGE_DISPLAY_SCALE : undefined
+    : imageScale === 'large' ? LARGE_DISPLAY_SCALE : DISPLAY_TEXT_SCALE
   // What sits behind the formula: transparent (only its own pixels) or the
   // terminal's own background colour, composited first.
   const backdrop = React.useSyncExternalStore(subscribeMathImageBacking, getMathImageBacking)
@@ -60,7 +59,7 @@ export function MathBlock({ token, dimColor, forceWidth }: Props): React.ReactNo
   const { columns } = useTerminalSize()
   const width = Math.max(0, forceWidth ?? columns)
   const renderable = enabled && token.pending !== true
-  const budget = width - INDENT_WIDTH - SAFETY_MARGIN
+  const budget = width - CENTER_SLACK
 
   // Dimmed blocks (e.g. inside thinking) keep text: an image cannot dim.
   const wantImage = mode === 'image' && renderable && !dimColor && budget > 0
@@ -70,8 +69,7 @@ export function MathBlock({ token, dimColor, forceWidth }: Props): React.ReactNo
   const color = themeInkHex(getTheme(themeName).text)
   const request: MathRenderRequest | undefined = wantImage && graphics && cellSize !== undefined && color !== undefined
     ? {
-        tex: token.text, display: true, color, cellSize, maxColumns: budget, maxRows: IMAGE_MAX_ROWS,
-        ...(scale === undefined ? {} : { scale }),
+        tex: token.text, display: true, color, cellSize, maxColumns: budget, maxRows: IMAGE_MAX_ROWS, scale,
       }
     : undefined
   const raster = useMathRaster(request)
@@ -109,23 +107,20 @@ export function MathBlock({ token, dimColor, forceWidth }: Props): React.ReactNo
         </Box>
       )
       : painted
-    return (
-      <Box paddingLeft={INDENT_WIDTH}>
-        {previewMath === undefined
-          ? image
-          : (
-            // A click opens the preview card instead of toggling the row or
-            // starting a selection underneath (same contract as thumbnails).
-            <Box onClick={event => { event.stopImmediatePropagation(); previewMath({ tex: token.text, request, source: raster.source }) }}>
-              {image}
-            </Box>
-          )}
-      </Box>
-    )
+    const body = previewMath === undefined
+      ? image
+      : (
+        // A click opens the preview card instead of toggling the row or
+        // starting a selection underneath (same contract as thumbnails).
+        <Box onClick={event => { event.stopImmediatePropagation(); previewMath({ tex: token.text, request, source: raster.source }) }}>
+          {image}
+        </Box>
+      )
+    return <Box alignSelf="center" maxWidth={width}>{body}</Box>
   }
   if (lines !== undefined && lines.every(line => stringWidth(line) <= budget)) {
     return (
-      <Box paddingLeft={INDENT_WIDTH}>
+      <Box alignSelf="center" maxWidth={width}>
         <Text dimColor={dimColor}>{lines.join('\n')}</Text>
       </Box>
     )
@@ -134,7 +129,7 @@ export function MathBlock({ token, dimColor, forceWidth }: Props): React.ReactNo
   const linear = renderable && lines !== undefined ? renderInlineMath(token.text) : undefined
   if (linear !== undefined) {
     return (
-      <Box paddingLeft={INDENT_WIDTH}>
+      <Box alignSelf="center" maxWidth={width}>
         <Text dimColor={dimColor}>{linear}</Text>
       </Box>
     )

@@ -211,7 +211,7 @@ export interface Config {
    *  Unsupported, still-streaming, or too-wide formulas keep their source. */
   mathRendering?: MathRendering
   /** Display-formula image size (settings `dsh-tui.mathImageScale`), used
-   *  with `mathRendering: image`: `auto` matches the body text, `large` and
+   *  with `mathRendering: image`: `auto` is a little larger than the body text, `large` and
    *  `xlarge` set display math bigger — which also hands the terminal more
    *  device pixels per stroke, the only sharpness lever a terminal image has.
    *  Inline formulas keep the base scale. */

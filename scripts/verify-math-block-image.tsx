@@ -19,7 +19,7 @@ import type { TerminalCellSize } from '../src/ink/terminal-image.js'
 import { MathBlock } from '../src/components/MathBlock.js'
 import { renderMathRaster, type MathRenderRequest } from '../src/math/renderer.js'
 import { getTheme } from '../src/theme.js'
-import { LARGE_DISPLAY_SCALE, XLARGE_DISPLAY_SCALE } from '../src/math/layout.js'
+import { DISPLAY_TEXT_SCALE, LARGE_DISPLAY_SCALE, XLARGE_DISPLAY_SCALE } from '../src/math/layout.js'
 import { stringWidth } from '../src/ink/stringWidth.js'
 import { renderDisplayMath, renderInlineMath } from '../src/terminal-utils/math.js'
 import { applyMathImageScale, applyMathRendering, normalizeMathImageScale, type MathImageScale } from '../src/tuiDisplayPrefs.js'
@@ -65,17 +65,20 @@ const block = (text: string, dimColor = false, pending = false) =>
 const rgb = /^rgb\((\d+),(\d+),(\d+)\)$/.exec(getTheme('dark').text)
 assert.ok(rgb !== null, 'the dark theme text color is rgb()')
 const color = `#${rgb.slice(1, 4).map(channel => Number(channel).toString(16).padStart(2, '0')).join('')}`
-const scaleFor = (scale: MathImageScale): number | undefined =>
-  scale === 'xlarge' ? XLARGE_DISPLAY_SCALE : scale === 'large' ? LARGE_DISPLAY_SCALE : undefined
+const scaleFor = (scale: MathImageScale): number =>
+  scale === 'xlarge' ? XLARGE_DISPLAY_SCALE : scale === 'large' ? LARGE_DISPLAY_SCALE : DISPLAY_TEXT_SCALE
 const request = (tex: string, scale: MathImageScale = 'auto'): MathRenderRequest => {
   const mathScale = scaleFor(scale)
   return {
     tex, display: true, color, cellSize: CELL, maxColumns: WIDTH - 2 - 4, maxRows: 16,
-    ...(mathScale === undefined ? {} : { scale: mathScale }),
+    scale: mathScale,
   }
 }
 
-const stacked = renderDisplayMath(QUADRATIC)!.map(line => `  ${line}`.trimEnd())
+const displayLines = renderDisplayMath(QUADRATIC)!
+const textWidth = Math.max(...displayLines.map(stringWidth))
+const textPad = Math.max(0, Math.floor((WIDTH - textWidth) / 2))
+const stacked = displayLines.map(line => `${' '.repeat(textPad)}${line}`.trimEnd())
 const linear = renderInlineMath(QUADRATIC)!
 
 applyMathRendering('image')
@@ -93,8 +96,11 @@ assert.ok(quadratic.ok, `the quadratic formula rasterizes (got ${quadratic.ok ? 
     display.every(line => stringWidth(line) <= quadratic.raster.columns)
   if (stackedFits) {
     // The box can now be a row or two taller than the stacked form; what
-    // matters is that the stacked formula is what fills it.
-    assert.deepEqual(lines.slice(0, stacked.length), stacked, 'the fallback is the full stacked formula when it fits the box')
+    // matters is that the stacked formula is what fills it. The box itself is
+    // centered in the message column.
+    const imagePad = Math.max(0, Math.floor((WIDTH - quadratic.raster.columns) / 2))
+    const inBox = displayLines.map(line => `${' '.repeat(imagePad)}${line}`.trimEnd())
+    assert.deepEqual(lines.slice(0, inBox.length), inBox, 'the fallback is the full stacked formula when it fits the box')
   } else {
     // Display formulas are set larger now, so a width-clamped raster can be
     // too narrow for the stacked form; the box then wraps the one-line

@@ -255,10 +255,13 @@ function screenLines(element: React.ReactElement, width: number): string[] {
   )
 }
 
+const centered = (text: string, width = 80) =>
+  `${' '.repeat(Math.max(0, Math.floor((width - stringWidth(text)) / 2)))}${text}`
+
 for (const source of MIXED_MATH_DOCUMENTS) {
   assert.deepEqual(
     screenLines(<Markdown>{source}</Markdown>, 80),
-    ['x² trails prose', '', 'Important', '', '  y²'],
+    ['x² trails prose', '', 'Important', '', centered('y²')],
     'inline math, intervening prose and the following display block stay separate',
   )
 }
@@ -279,7 +282,7 @@ for (const cacheTokens of [true, false]) {
     const source = `${LONG_PREFIX}\n\n${formula}`
     const lines = screenLines(<Markdown cacheTokens={cacheTokens}>{source}</Markdown>, 80)
     assert.equal(lines.slice(0, -2).join(''), LONG_PREFIX, 'the long prose prefix remains intact')
-    assert.deepEqual(lines.slice(-2), ['', '  x²'], 'a late display block still gets its own layout node')
+    assert.deepEqual(lines.slice(-2), ['', centered('x²')], 'a late display block still gets its own layout node')
   }
 }
 
@@ -292,16 +295,18 @@ const blockToken = (text: string, pending = false) => ({
 })
 
 const wide = screenLines(<MathBlock token={blockToken(QUADRATIC)} dimColor={false} forceWidth={80} />, 80)
+const wideDisplay = renderDisplayMath(QUADRATIC)!
+const widePad = Math.max(0, Math.floor((80 - Math.max(...wideDisplay.map(stringWidth))) / 2))
 assert.deepEqual(
   wide.filter(line => line !== ''),
-  ['      -b ± √(b²-4ac)', '  x = ──────────────', '            2a'],
-  'a fitting block renders stacked and indented',
+  wideDisplay.map(line => `${' '.repeat(widePad)}${line}`.trimEnd()),
+  'a fitting block renders stacked and centered',
 )
 
 const narrow = screenLines(<MathBlock token={blockToken(QUADRATIC)} dimColor={false} forceWidth={20} />, 20)
 assert.ok(!narrow.some(line => line.includes('─')), 'a too-wide block does not draw a torn layout')
 assert.equal(narrow.map(line => line.trim()).join(' '), 'x = (-b ± √(b²-4ac))/(2a)', 'a too-wide block falls back to the single-line form, wrapping like prose')
-assert.ok(narrow.every(line => line === '' || line.startsWith('  ')), 'every wrapped row of the fallback keeps the block indent')
+assert.ok(narrow.every(line => line.length <= 20), 'every wrapped row of the fallback stays inside the block')
 
 const matrix = String.raw`\begin{pmatrix} 1 & 2 \\ 3 & 4 \end{pmatrix}`
 const narrowMatrix = screenLines(<MathBlock token={blockToken(matrix)} dimColor={false} forceWidth={8} />, 8)

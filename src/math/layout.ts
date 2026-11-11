@@ -31,6 +31,8 @@ export const BASE_EX_TO_CELL_WIDTH = TEX_X_HEIGHT_EM / MONOSPACE_ADVANCE_EM
  * constants had (1.44x and 1.8x the text size). Inline formulas keep the base
  * scale — their single row of cells clamps the resolution anyway.
  */
+/** Display formulas are set a little above the body text at the text-size step. */
+export const DISPLAY_TEXT_SCALE = 1.1
 export const LARGE_DISPLAY_SCALE = 1.44
 /** The next step up: about 80% more pixels than the base scale. */
 export const XLARGE_DISPLAY_SCALE = 1.8
