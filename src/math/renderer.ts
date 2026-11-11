@@ -21,7 +21,7 @@ import {
   type TerminalCellSize,
   type TerminalImageSource,
 } from '../ink/terminal-image.js'
-import { hasFraction, INLINE_FRACTION_SCALE, planFormulaLayout, type FormulaLayoutPlan } from './layout.js'
+import { hasComplexFraction, hasFraction, INLINE_FRACTION_SCALE, planFormulaLayout, SIMPLE_INLINE_FRACTION_SCALE, type FormulaLayoutPlan } from './layout.js'
 import { WeightedLru } from '../utils/weightedLru.js'
 
 /** Same budget as the Unicode renderer: longer input is a paste, not math. */
@@ -62,9 +62,10 @@ export interface MathRenderRequest {
   /**
    * Explicit multiplier on the text-size base scale. Display formulas pass
    * the `mathImageScale` step (1.44 or 1.8) so they are set larger than the
-   * body text. When omitted, a fraction-bearing inline formula gets
-   * {@link INLINE_FRACTION_SCALE} across the two rows it reserves; display
-   * formulas keep the text size.
+   * body text. When omitted, a fraction-bearing inline formula gets a lift
+   * across the two rows it reserves — {@link INLINE_FRACTION_SCALE} for
+   * display-style or nested fractions, {@link SIMPLE_INLINE_FRACTION_SCALE}
+   * for a plain `\frac`; display formulas keep the text size.
    */
   readonly scale?: number
   /**
@@ -184,10 +185,12 @@ async function rasterize(vector: Vector, request: MathRenderRequest, color: stri
   const sharp = await loadSharp()
   if (sharp === undefined) return { ok: false, failure: 'backend-unavailable' }
   // An explicit display-size choice wins. A fraction-bearing inline image
-  // gets a small fixed lift across its reserved two rows; deeper nesting is
-  // still scaled back so the image does not take a third row.
+  // gets a lift across its reserved two rows; simple fractions get less than
+  // display-style or nested ones.
   const inlineLift = !request.display && hasFraction(request.tex)
-  const scale = request.scale ?? (inlineLift ? INLINE_FRACTION_SCALE : 1)
+  const scale = request.scale ?? (inlineLift
+    ? hasComplexFraction(request.tex) ? INLINE_FRACTION_SCALE : SIMPLE_INLINE_FRACTION_SCALE
+    : 1)
   for (const bleed of inlineLift ? INLINE_BLEED_STEPS : BLEED_STEPS) {
     const plan = planFormulaLayout(vector, {
       cellSize: request.cellSize,

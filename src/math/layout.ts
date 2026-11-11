@@ -41,6 +41,8 @@ export const XLARGE_DISPLAY_SCALE = 1.8
  * still scaled back so it does not take a third row.
  */
 export const INLINE_FRACTION_SCALE = 1.5
+/** Simple \frac/\tfrac (no \dfrac, no nesting) gets a smaller lift. */
+export const SIMPLE_INLINE_FRACTION_SCALE = 1.25
 /**
  * Below this fraction of the base scale the formula is unreadable as an
  * image; the caller keeps the Unicode rendering instead of shrinking further.
@@ -54,9 +56,56 @@ const MONOSPACE_DESCENT_EM = 0.25
  * a small one-row lift; matrices, sums and other tall formulas do not.
  */
 const FRACTION_COMMAND = /\\(?:[dtc]?frac|binom|dbinom|tbinom|genfrac|over|atop|above|choose)(?![A-Za-z])/
+const COMPLEX_FRACTION = /\\(?:dfrac|cfrac|genfrac|over|atop|above|choose)(?![A-Za-z])/
+const SIMPLE_FRACTION = /\\(?:t?frac|binom|dbinom|tbinom)(?![A-Za-z])/g
 
 export function hasFraction(tex: string): boolean {
   return FRACTION_COMMAND.test(tex)
+}
+
+/** The next TeX argument: a balanced group, a control word, or one character. */
+function readArgument(tex: string, start: number): { value: string; next: number } | undefined {
+  let index = start
+  while (index < tex.length && /\s/u.test(tex[index]!)) index++
+  if (index >= tex.length) return undefined
+  if (tex[index] === '{') {
+    let depth = 0
+    for (let end = index; end < tex.length; end++) {
+      const char = tex[end]
+      if (char === '\\') { end++; continue }
+      if (char === '{') depth++
+      else if (char === '}' && --depth === 0) {
+        return { value: tex.slice(index + 1, end), next: end + 1 }
+      }
+    }
+    return undefined
+  }
+  if (tex[index] === '\\') {
+    const command = /^\\(?:[A-Za-z]+|.)/u.exec(tex.slice(index))
+    return command === null ? undefined : { value: command[0], next: index + command[0].length }
+  }
+  const code = tex.codePointAt(index)
+  const length = code !== undefined && code > 0xffff ? 2 : 1
+  return { value: tex.slice(index, index + length), next: index + length }
+}
+
+/**
+ * Whether an inline fraction needs the larger lift: an explicit display-style
+ * fraction, another fraction command, or a fraction nested in a fraction
+ * argument. Separate fractions in one formula (`\frac{a}{b}+\frac{c}{d}`)
+ * stay simple.
+ */
+export function hasComplexFraction(tex: string): boolean {
+  if (COMPLEX_FRACTION.test(tex)) return true
+  SIMPLE_FRACTION.lastIndex = 0
+  for (let match = SIMPLE_FRACTION.exec(tex); match !== null; match = SIMPLE_FRACTION.exec(tex)) {
+    const numerator = readArgument(tex, SIMPLE_FRACTION.lastIndex)
+    if (numerator === undefined) continue
+    const denominator = readArgument(tex, numerator.next)
+    if (denominator === undefined) continue
+    if (hasFraction(numerator.value) || hasFraction(denominator.value)) return true
+  }
+  return false
 }
 
 /**

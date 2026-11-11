@@ -12,7 +12,7 @@ import assert from 'node:assert/strict'
 import { readdirSync, readFileSync } from 'node:fs'
 import { join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { BASE_EX_TO_CELL_WIDTH, hasFraction, INLINE_FRACTION_SCALE, planFormulaLayout, textBaselineY } from '../src/math/layout.js'
+import { BASE_EX_TO_CELL_WIDTH, hasComplexFraction, hasFraction, INLINE_FRACTION_SCALE, planFormulaLayout, SIMPLE_INLINE_FRACTION_SCALE, textBaselineY } from '../src/math/layout.js'
 import { clearMathRenderCaches, mathRenderStats, renderMathRaster } from '../src/math/renderer.js'
 
 const cell = { width: 10, height: 20 }
@@ -48,7 +48,12 @@ assert.equal(hasFraction(String.raw`\overline{x}`), false, 'an overline is not a
 assert.equal(hasFraction(String.raw`\frac{a}{b}`), true, 'frac is a fraction')
 assert.equal(hasFraction(String.raw`a \over b`), true, 'plain TeX over is a fraction')
 assert.equal(hasFraction(String.raw`\binom{n}{k}`), true, 'a binomial is fraction-like')
-assert.equal(INLINE_FRACTION_SCALE, 1.5, 'inline fractions use the bounded two-row lift')
+assert.equal(INLINE_FRACTION_SCALE, 1.5, 'nested and display-style inline fractions use the larger lift')
+assert.equal(SIMPLE_INLINE_FRACTION_SCALE, 1.25, 'plain inline fractions use the smaller lift')
+assert.equal(hasComplexFraction(String.raw`\frac{a}{b}`), false, 'a plain fraction is simple')
+assert.equal(hasComplexFraction(String.raw`\frac{a}{b}+\frac{c}{d}`), false, 'separate plain fractions are simple')
+assert.equal(hasComplexFraction(String.raw`\frac{\frac{a}{b}}{c}`), true, 'a nested fraction is complex')
+assert.equal(hasComplexFraction(String.raw`\dfrac{a}{b}`), true, 'a display-style fraction is complex')
 const tallCell = planFormulaLayout({ widthEx: 10, heightEx: 2 }, { ...limits, cellSize: { width: 10, height: 40 }, maxColumns: 80, maxRows: 10 })
 assert.ok(typeof tallCell !== 'string' && tallCell.pixelsPerEx === base.pixelsPerEx, 'a taller line box does not enlarge the formula')
 const baseline = planFormulaLayout({ widthEx: 8, heightEx: 2, verticalAlignEx: -0.25 }, { ...limits, maxColumns: 80, maxRows: 1, baseline: 16 })
@@ -125,6 +130,10 @@ for (const tex of FORMULAS) {
   for (let level = 0; level < 5; level++) deep = String.raw`\frac{` + deep + String.raw`}{x}`
   const deepRaster = await request(deep, false, inlineTwoRow)
   assert.ok(deepRaster.ok && deepRaster.raster.rows === 2, 'a deeply nested inline fraction still fits its two rows')
+  const simple = await request(String.raw`\frac{a}{b}`, false, inlineTwoRow)
+  const displayStyle = await request(String.raw`\dfrac{a}{b}`, false, inlineTwoRow)
+  assert.ok(simple.ok && displayStyle.ok, 'simple and display-style inline fractions both render')
+  assert.ok(inkWidth(displayStyle) > inkWidth(simple), 'display-style fractions keep the larger lift')
 }
 
 // Ink color: the most opaque pixel carries the requested color.
