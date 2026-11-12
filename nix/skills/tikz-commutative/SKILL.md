@@ -24,7 +24,11 @@ When the user asks for a diagram:
   chains; `"g"'` puts the label on the other side of the arrow.
   Protect a label that contains a comma with braces: write
   `"{(x,y)\mapsto x+y}"`, not `"(x,y)\mapsto x+y"`; the unbraced comma splits
-  the arrow options and TeX errors at `\end{tikzcd}`.
+  the arrow options and TeX errors at `\end{tikzcd}`. This is a syntax rule in
+  the emitted source, not something the renderer repairs.
+- Write arrow options in TikZ's ASCII syntax: `\draw[->]`, `\draw[<->]`,
+  `\draw[<-]`, and `>=Stealth`. Do not copy Unicode arrows or `≥` from prose
+  into an option list; they are not valid TikZ keys.
 - For automata, trees, plots and other figures use a plain `tikzpicture`. The
   renderer preloads `arrows.meta`, `positioning`, `calc`, `automata` and
   `shapes.geometric`; declare additional libraries with `\usetikzlibrary{...}`
