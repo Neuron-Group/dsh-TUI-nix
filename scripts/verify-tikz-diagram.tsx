@@ -69,6 +69,13 @@ const UNICODE_TIKZCD = String.raw`\begin{tikzcd}
 A \arrow[r, "δ"'] & B
 \end{tikzcd}`
 
+// A comma inside a quoted tikz-cd label is an option separator unless the
+// label is braced. The wrapper must protect it before TeX sees it.
+const COMMA_LABEL_TIKZCD = String.raw`\begin{tikzcd}
+A \arrow[d, "(x,y)\mapsto x+y"] \\
+B
+\end{tikzcd}`
+
 const themeColor = themeInkHex(getTheme('dark').text)
 assert.ok(themeColor !== undefined, 'the dark theme text color is a hex color')
 const ink = themeColor as string
@@ -186,6 +193,12 @@ for (const [source, failure] of [
   assert.doesNotMatch(built.document.document, /δ/u, 'no unpreprocessed Unicode delta reaches TeX')
   assert.match(built.document.document, /\\usepackage\{amsmath\}/u, 'base math packages are always loaded')
   assert.match(built.document.document, /\\usepackage\{amssymb\}/u, 'blackboard-bold support is always loaded')
+}
+{
+  const built = buildTikzDocument(COMMA_LABEL_TIKZCD)
+  assert.ok(built.ok, 'a tikz-cd label containing a comma is accepted')
+  assert.match(built.document.document, /"\{\(x,y\)\\mapsto x\+y\}"/u,
+    'a comma-containing quoted label is braced before TeX parses arrow options')
 }
 
 // ── Layout ────────────────────────────────────────────────────────────────

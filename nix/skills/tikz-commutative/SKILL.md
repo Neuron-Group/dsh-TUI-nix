@@ -22,6 +22,9 @@ When the user asks for a diagram:
 
   Use `\arrow` for squares, triangles, loops (`\arrow[loop right]`) and longer
   chains; `"g"'` puts the label on the other side of the arrow.
+  Protect a label that contains a comma with braces: write
+  `"{(x,y)\mapsto x+y}"`, not `"(x,y)\mapsto x+y"`; the unbraced comma splits
+  the arrow options and TeX errors at `\end{tikzcd}`.
 - For automata, trees, plots and other figures use a plain `tikzpicture`. The
   renderer preloads `arrows.meta`, `positioning`, `calc`, `automata` and
   `shapes.geometric`; declare additional libraries with `\usetikzlibrary{...}`

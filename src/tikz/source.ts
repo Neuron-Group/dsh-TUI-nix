@@ -15,7 +15,7 @@
  */
 
 /** Bumped whenever the fixed preamble below changes; it is part of the cache key. */
-export const TIKZ_TEMPLATE_VERSION = 2
+export const TIKZ_TEMPLATE_VERSION = 3
 
 /** Longer input is a paste, not a figure. Real commutative diagrams are far smaller. */
 export const TIKZ_SOURCE_LIMIT = 16_384
@@ -65,6 +65,25 @@ const UNICODE_MATH: readonly (readonly [string, string])[] = [
   ['ℕ', '\\mathbb{N}'], ['ℚ', '\\mathbb{Q}'], ['ℙ', '\\mathbb{P}'],
   ['ℍ', '\\mathbb{H}'],
 ]
+
+/**
+ * tikz-cd splits arrow options on commas, including commas inside a quoted
+ * label: `" (x,y)\\mapsto x+y"` makes `y)...` a bogus option and TeX dies
+ * with "Missing \endcsname inserted". Braces are the documented way to
+ * protect such labels; normalize the common model output before the compile.
+ */
+const TIKZ_LABELLED_OPTIONS = /(\\(?:arrow|draw|path)\s*\[)([^\]]*)(\])/gu
+
+function normalizeTikzLabels(source: string): string {
+  return source.replace(TIKZ_LABELLED_OPTIONS, (_match, prefix: string, options: string, close: string) => {
+    const normalized = options.replace(/"([^"]*)"/gu, (quoted, label: string) => {
+      if (!/(^|[^\\]),/u.test(label)) return quoted
+      if (/^\s*\{[\s\S]*\}\s*$/u.test(label)) return quoted
+      return `"{${label}}"`
+    })
+    return prefix + normalized + close
+  })
+}
 
 function normalizeUnicodeMath(source: string): string {
   let normalized = source
@@ -275,6 +294,7 @@ export function buildTikzDocument(source: string): TikzDocumentResult {
     if (endDocument >= 0) body = body.slice(0, endDocument)
   }
   body = body.replace(/\\end\{document\}/gu, '').trim()
+  body = normalizeTikzLabels(body)
   body = normalizeUnicodeMath(body)
 
   if (body === '') return { ok: false, failure: 'no-figure' }
